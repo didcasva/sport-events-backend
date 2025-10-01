@@ -39,7 +39,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	
 
 	router := mux.NewRouter()
 	api := router.PathPrefix("/api").Subrouter()
@@ -47,15 +46,27 @@ func main() {
 
 	// Solo organizers pueden crear eventos
 	api.Handle("/events", middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.CreateEvent))).Methods("POST")
+	// Editar evento (organizer dueño)
+	api.Handle("/events/{id}",middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.UpdateEventHandler)),).Methods("PUT")
+	// Eliminar evento (organizer dueño)
+	api.Handle("/events/{id}",middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.DeleteEventHandler)),).Methods("DELETE")
+	// Solo organizers pueden ver inscritos
+	api.Handle("/events/{id}/registrations", middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.GetEventRegistrationsHandler))).Methods("GET")
 
 	// Todos los autenticados pueden ver eventos
 	api.HandleFunc("/events", handlers.GetEventsHandler).Methods("GET")
 
 	// Solo runners pueden registrarse en eventos
 	api.Handle("/events/{id}/register", middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.RegisterEventHandler))).Methods("POST")
+	// Cancelar inscripción (solo runners)
+	api.Handle("/events/{id}/register",	middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.CancelRegistrationHandler)),).Methods("DELETE")
+	// Ver mis inscripciones (solo runners)
+	api.Handle("/my-registrations",	middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.GetMyRegistrationsHandler)),).Methods("GET")
 
-	// Solo organizers pueden ver inscritos
-	api.Handle("/events/{id}/registrations", middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.GetEventRegistrationsHandler))).Methods("GET")
+
+	// Cualquier usuario autenticado puede ver su propio perfil
+	api.HandleFunc("/me", handlers.GetMeHandler).Methods("GET")
+
 
 	// Rutas públicas
 	router.HandleFunc("/auth/register", handlers.RegisterHandler).Methods("POST")

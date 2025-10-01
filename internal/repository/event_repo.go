@@ -2,7 +2,7 @@ package repository
 
 import (
 	"time"
-
+	"errors"
 	"sport-events-backend/internal/config"
 	"sport-events-backend/internal/models"
 )
@@ -54,4 +54,111 @@ func GetRegistrationsByEvent(eventID int) ([]models.Registration, error) {
 	return regs, nil
 }
 
+func GetEventsByCreator(userID int) ([]models.EventSummary, error) {
+	var evts []models.EventSummary
+	query := `
+		SELECT id, name, type, date, location, created_by
+		FROM events
+		WHERE created_by = $1
+		ORDER BY date DESC;
+	`
+	err := config.DB.Select(&evts, query, userID)
+	return evts, err
+}
+func GetUserRegistrationsWithEvents(userID int) ([]models.RegistrationWithEvent, error) {
+	var rows []models.RegistrationWithEvent
+	query := `
+		SELECT 
+			r.id         AS registration_id,
+			e.id         AS event_id,
+			e.name       AS name,
+			e.type       AS type,
+			e.date       AS date,
+			e.location   AS location,
+			r.date       AS registered_at
+		FROM registrations r
+		JOIN events e ON e.id = r.event_id
+		WHERE r.user_id = $1
+		ORDER BY e.date DESC;
+	`
+	err := config.DB.Select(&rows, query, userID)
+	return rows, err
+}
 
+// Cancela inscripción; retorna (bool) si eliminó algo
+func CancelUserRegistration(userID, eventID int) (bool, error) {
+	const q = `
+		DELETE FROM registrations
+		WHERE user_id = $1 AND event_id = $2
+		RETURNING id
+	`
+	var id int
+	if err := config.DB.Get(&id, q, userID, eventID); err != nil {
+		// No rows → no estaba inscrito
+		// sqlx.Get retorna error si no hay fila; lo traducimos a (false, nil)
+		// pero distinguimos el caso "no rows"
+		// Para no importar paquetes extras, hacemos un check simple:
+		// Si quieres fino: usar errors.Is(err, sql.ErrNoRows)
+		return false, nil
+	}
+	return true, nil
+}
+// Obtener detalle (útil si quieres validar cosas antes de actualizar)
+func GetEventByID(id int) (models.Event, error) {
+	var e models.Event
+	const q = `
+		SELECT id, name, description, type, date, location, route, created_by, created_at
+		FROM events
+		WHERE id = $1
+	`
+	err := config.DB.Get(&e, q, id)
+	return e, err
+}
+
+// Actualizar solo si el owner coincide (WHERE id=? AND created_by=?)
+func UpdateEventByOwner(e models.Event, ownerID int) (bool, error) {
+	const q = `
+		UPDATE events
+		SET name = $1,
+		    description = $2,
+		    type = $3,
+		    date = $4,
+		    location = $5,
+		    route = $6
+		WHERE id = $7 AND created_by = $8
+		RETURNING id
+	`
+	var id int
+	if err := config.DB.Get(&id, q,
+		e.Name, e.Description, e.Type, e.Date, e.Location, e.Route,
+		e.ID, ownerID,
+	); err != nil {
+		// no rows → no es owner o no existe
+		return false, err
+	}
+	return true, nil
+}
+
+// Eliminar solo si el owner coincide
+func DeleteEventByOwner(eventID, ownerID int) (bool, error) {
+	const q = `
+		DELETE FROM events
+		WHERE id = $1 AND created_by = $2
+		RETURNING id
+	`
+	var id int
+	if err := config.DB.Get(&id, q, eventID, ownerID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// (Opcional) Validación simple de existencia del evento
+func MustOwnEvent(eventID, ownerID int) error {
+	const q = `SELECT 1 FROM events WHERE id=$1 AND created_by=$2`
+	var one int
+	if err := config.DB.Get(&one, q, eventID, ownerID); err != nil {
+		return errors.New("no eres dueño del evento o no existe")
+	}
+	return nil
+}
