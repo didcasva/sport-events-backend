@@ -60,17 +60,6 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 
-func GetEventsHandler(w http.ResponseWriter, r *http.Request) {
-	events, err := repository.GetAllEvents() // función que consultas la BD
-	if err != nil {
-		http.Error(w, "Error obteniendo eventos", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(events)
-}
-
 func RegisterEventHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r)
 	if !ok {
@@ -243,4 +232,65 @@ func DeleteEventHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Evento eliminado"})
+}
+
+func GetEventDetailHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	eventID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "ID de evento inválido", http.StatusBadRequest)
+		return
+	}
+
+	evt, err := repository.GetEventByID(eventID)
+	if err != nil {
+		http.Error(w, "Evento no encontrado", http.StatusNotFound)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"event": evt,
+	}
+
+	// Si es organizer y dueño del evento, incluir inscritos
+	if claims.Role == "organizer" && evt.CreatedBy == claims.UserID {
+		regs, err := repository.GetRegistrationsForEvent(eventID)
+		if err == nil {
+			resp["registrations"] = regs
+		} else {
+			resp["registrations"] = []interface{}{}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+// GET /api/events?type=&location=&date= consultas por filtros
+func GetEventsHandler(w http.ResponseWriter, r *http.Request) {
+	eventType := r.URL.Query().Get("type")
+	location := r.URL.Query().Get("location")
+	date := r.URL.Query().Get("date")
+
+	var events []models.Event
+	var err error
+
+	if eventType != "" || location != "" || date != "" {
+		events, err = repository.GetEventsFiltered(eventType, location, date)
+	} else {
+		events, err = repository.GetAllEvents()
+	}
+
+	if err != nil {
+		http.Error(w, "Error obteniendo eventos: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(events)
 }

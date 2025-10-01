@@ -55,6 +55,7 @@ func main() {
 
 	// Todos los autenticados pueden ver eventos
 	api.HandleFunc("/events", handlers.GetEventsHandler).Methods("GET")
+	api.HandleFunc("/events/{id}", handlers.GetEventDetailHandler).Methods("GET")
 
 	// Solo runners pueden registrarse en eventos
 	api.Handle("/events/{id}/register", middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.RegisterEventHandler))).Methods("POST")

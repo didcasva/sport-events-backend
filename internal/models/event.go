@@ -34,3 +34,10 @@ type RegistrationWithEvent struct {
 	Location       string    `db:"location" json:"location"`
 	RegisteredAt   time.Time `db:"registered_at" json:"registered_at"`
 }
+
+type EventRegistrationUser struct {
+	RegistrationID int    `db:"registration_id" json:"registration_id"`
+	UserID         int    `db:"user_id" json:"user_id"`
+	UserName       string `db:"user_name" json:"user_name"`
+	UserEmail      string `db:"user_email" json:"user_email"`
+}

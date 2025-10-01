@@ -3,6 +3,7 @@ package repository
 import (
 	"time"
 	"errors"
+	"fmt"
 	"sport-events-backend/internal/config"
 	"sport-events-backend/internal/models"
 )
@@ -161,4 +162,55 @@ func MustOwnEvent(eventID, ownerID int) error {
 		return errors.New("no eres dueño del evento o no existe")
 	}
 	return nil
+}
+
+func GetRegistrationsForEvent(eventID int) ([]models.EventRegistrationUser, error) {
+	var rows []models.EventRegistrationUser
+	const q = `
+		SELECT 
+			r.id   AS registration_id,
+			u.id   AS user_id,
+			u.name AS user_name,
+			u.email AS user_email
+		FROM registrations r
+		JOIN users u ON u.id = r.user_id
+		WHERE r.event_id = $1
+		ORDER BY r.id DESC;
+	`
+	err := config.DB.Select(&rows, q, eventID)
+	return rows, err
+}
+
+
+// Filtros opcionales: type, location (parcial), date (YYYY-MM-DD)
+func GetEventsFiltered(eventType, location, date string) ([]models.Event, error) {
+	var events []models.Event
+	query := `
+		SELECT id, name, description, type, date, location, route, created_by, created_at
+		FROM events
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	i := 1
+
+	if eventType != "" {
+		query += fmt.Sprintf(" AND type = $%d", i)
+		args = append(args, eventType)
+		i++
+	}
+	if location != "" {
+		query += fmt.Sprintf(" AND location ILIKE $%d", i)
+		args = append(args, "%"+location+"%")
+		i++
+	}
+	if date != "" {
+		query += fmt.Sprintf(" AND DATE(date) = $%d", i)
+		args = append(args, date) // formato YYYY-MM-DD
+		i++
+	}
+
+	query += " ORDER BY date ASC"
+
+	err := config.DB.Select(&events, query, args...)
+	return events, err
 }
