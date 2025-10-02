@@ -15,6 +15,10 @@ type Event struct {
 	Route       json.RawMessage `db:"route" json:"route"` // JSONB
 	CreatedBy   int             `db:"created_by" json:"created_by"`
 	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
+	Status            string          `db:"status" json:"status"`
+	CancelledAt       *time.Time      `db:"cancelled_at" json:"cancelled_at,omitempty"`
+	CancellationReason *string        `db:"cancellation_reason" json:"cancellation_reason,omitempty"`
+
 }
 type EventSummary struct {
 	ID        int       `db:"id" json:"id"`

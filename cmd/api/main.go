@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	gh "github.com/gorilla/handlers"
 	"sport-events-backend/internal/config"
 	"sport-events-backend/internal/handlers"
 	"sport-events-backend/internal/middleware"
@@ -52,6 +53,8 @@ func main() {
 	api.Handle("/events/{id}",middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.DeleteEventHandler)),).Methods("DELETE")
 	// Solo organizers pueden ver inscritos
 	api.Handle("/events/{id}/registrations", middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.GetEventRegistrationsHandler))).Methods("GET")
+	// Cancelar evento (solo organizer dueño)
+	api.Handle("/events/{id}/cancel",middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.CancelEventHandler)),	).Methods("POST")
 
 	// Todos los autenticados pueden ver eventos
 	api.HandleFunc("/events", handlers.GetEventsHandler).Methods("GET")
@@ -65,6 +68,7 @@ func main() {
 	api.Handle("/my-registrations",	middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.GetMyRegistrationsHandler)),).Methods("GET")
 
 
+
 	// Cualquier usuario autenticado puede ver su propio perfil
 	api.HandleFunc("/me", handlers.GetMeHandler).Methods("GET")
 
@@ -74,6 +78,12 @@ func main() {
 	router.HandleFunc("/auth/login", handlers.LoginHandler).Methods("POST")
 
 
+	// Configurar CORS
+    headersOk := gh.AllowedHeaders([]string{"Content-Type", "Authorization"})
+    originsOk := gh.AllowedOrigins([]string{"http://localhost:3000"}) // frontend
+    methodsOk := gh.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
+
 	log.Printf("Server running on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, router))
+	log.Fatal(http.ListenAndServe(":"+port, gh.CORS(headersOk, originsOk, methodsOk)(router)))
+
 }

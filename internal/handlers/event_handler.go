@@ -54,6 +54,15 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error creando evento: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := validateEventRequired(input.Name, input.Type, input.Location, input.Date); err != nil {
+	http.Error(w, err.Error(), http.StatusBadRequest)
+	return
+	}
+	if err := validateEventFuture(input.Date); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id})
@@ -84,39 +93,40 @@ func RegisterEventHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error registrando usuario: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Usuario inscrito correctamente",
 	})
 }
+// funcion para cancelar un registro de usuario a un evento
 func CancelRegistrationHandler(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+    claims, ok := middleware.GetClaims(r)
+    if !ok {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
 
-	vars := mux.Vars(r)
-	eventID, err := strconv.Atoi(vars["id"])
-	if err != nil {
-		http.Error(w, "ID de evento inválido", http.StatusBadRequest)
-		return
-	}
+    vars := mux.Vars(r)
+    eventID, err := strconv.Atoi(vars["id"])
+    if err != nil {
+        http.Error(w, "ID de evento inválido", http.StatusBadRequest)
+        return
+    }
 
-	okDel, err := repository.CancelUserRegistration(claims.UserID, eventID)
-	if err != nil {
-		http.Error(w, "Error cancelando inscripción: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if !okDel {
-		http.Error(w, "No estabas inscrito en este evento", http.StatusNotFound)
-		return
-	}
+    err = repository.CancelRegistration(claims.UserID, eventID)
+    if err != nil {
+        http.Error(w, "Error cancelando inscripción: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
 
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Inscripción cancelada",
-	})
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]string{
+        "message": "Inscripción cancelada con éxito",
+    })
 }
+
 // internal/handlers/events.go
 func GetEventRegistrationsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -179,6 +189,14 @@ func UpdateEventHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "JSON inválido", http.StatusBadRequest)
 		return
 	}
+		if err := validateEventRequired(in.Name, in.Type, in.Location, in.Date); err != nil {
+	http.Error(w, err.Error(), http.StatusBadRequest)
+	return
+	}
+	if err := validateEventFuture(in.Date); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// Validaciones mínimas
 	if in.Name == "" || in.Type == "" || in.Location == "" {
@@ -203,6 +221,8 @@ func UpdateEventHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No autorizado para editar o evento inexistente", http.StatusForbidden)
 		return
 	}
+
+
 
 	updated, _ := repository.GetEventByID(eventID)
 	w.Header().Set("Content-Type", "application/json")
@@ -229,6 +249,19 @@ func DeleteEventHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No autorizado para eliminar o evento inexistente", http.StatusForbidden)
 		return
 	}
+	
+	total, err := repository.CountRegistrationsForEvent(eventID)
+	if err != nil {
+		http.Error(w, "Error verificando inscripciones: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if total > 0 {
+		http.Error(w, "No se puede eliminar: el evento tiene inscripciones activas", http.StatusConflict) // 409
+		return
+	}
+
+
+
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Evento eliminado"})
@@ -276,12 +309,12 @@ func GetEventsHandler(w http.ResponseWriter, r *http.Request) {
 	eventType := r.URL.Query().Get("type")
 	location := r.URL.Query().Get("location")
 	date := r.URL.Query().Get("date")
-
+	includeCancelled := r.URL.Query().Get("include_cancelled") == "true"
 	var events []models.Event
 	var err error
 
-	if eventType != "" || location != "" || date != "" {
-		events, err = repository.GetEventsFiltered(eventType, location, date)
+	if eventType != "" || location != "" || date != "" || includeCancelled {
+		events, err = repository.GetEventsFiltered(eventType, location, date, includeCancelled)
 	} else {
 		events, err = repository.GetAllEvents()
 	}
@@ -290,7 +323,41 @@ func GetEventsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error obteniendo eventos: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(events)
 }
+// POST /api/events/{id}/cancel  (solo organizer dueño)
+func CancelEventHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r)
+	if !ok { http.Error(w, "Unauthorized", http.StatusUnauthorized); return }
+
+	vars := mux.Vars(r)
+	eventID, err := strconv.Atoi(vars["id"])
+	if err != nil { http.Error(w, "ID de evento inválido", http.StatusBadRequest); return }
+
+	var in struct{ Reason string `json:"reason"` }
+	_ = json.NewDecoder(r.Body).Decode(&in) // reason opcional
+
+	// Si tiene inscritos, permitimos cancelar igual (justamente para avisarles).
+	// Si quisieras bloquear cancelación sin avisar, aquí podrías chequear CountRegistrationsForEvent.
+
+	okUpd, err := repository.CancelEventByOwner(eventID, claims.UserID, in.Reason)
+	if err != nil || !okUpd {
+		http.Error(w, "No autorizado o evento ya cancelado/inexistente", http.StatusForbidden)
+		return
+	}
+
+	evt, _ := repository.GetEventByID(eventID)
+	// TODO (opcional): encolar notificaciones a inscritos (email/push/webhook)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Evento cancelado",
+		"event":   evt,
+	})
+}
+
+
+

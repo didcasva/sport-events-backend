@@ -4,6 +4,7 @@ import (
 	"time"
 	"errors"
 	"fmt"
+	
 	"sport-events-backend/internal/config"
 	"sport-events-backend/internal/models"
 )
@@ -23,7 +24,12 @@ func CreateEvent(e models.Event) (int, error) {
 // GetAllEvents obtiene todos los eventos como []models.Event
 func GetAllEvents() ([]models.Event, error) {
 	var events []models.Event
-	query := `SELECT id, name, description, type, date, location, route, created_by, created_at FROM events`
+	query := `
+		SELECT id, name, description, type, date, location, route, created_by, created_at, status
+		FROM events
+		WHERE status <> 'cancelled'
+		ORDER BY date ASC
+	`
 	err := config.DB.Select(&events, query)
 	return events, err
 }
@@ -108,7 +114,18 @@ func CancelUserRegistration(userID, eventID int) (bool, error) {
 func GetEventByID(id int) (models.Event, error) {
 	var e models.Event
 	const q = `
-		SELECT id, name, description, type, date, location, route, created_by, created_at
+		SELECT id, 
+		name, 
+		description, 
+		type, 
+		date, 
+		location, 
+		route, 
+		created_by, 
+		created_at,
+		status,
+		cancelled_at,
+		cancellation_reason
 		FROM events
 		WHERE id = $1
 	`
@@ -183,10 +200,10 @@ func GetRegistrationsForEvent(eventID int) ([]models.EventRegistrationUser, erro
 
 
 // Filtros opcionales: type, location (parcial), date (YYYY-MM-DD)
-func GetEventsFiltered(eventType, location, date string) ([]models.Event, error) {
+func GetEventsFiltered(eventType, location, date string,includeCancelled bool) ([]models.Event, error) {
 	var events []models.Event
 	query := `
-		SELECT id, name, description, type, date, location, route, created_by, created_at
+		SELECT id, name, description, type, date, location, route, created_by, created_at,status
 		FROM events
 		WHERE 1=1
 	`
@@ -208,9 +225,39 @@ func GetEventsFiltered(eventType, location, date string) ([]models.Event, error)
 		args = append(args, date) // formato YYYY-MM-DD
 		i++
 	}
+	if !includeCancelled {
+		query += " AND status <> 'cancelled'"
+	}
+
 
 	query += " ORDER BY date ASC"
 
 	err := config.DB.Select(&events, query, args...)
 	return events, err
 }
+
+// Cambiar estado a 'cancelled' solo si es owner
+func CancelEventByOwner(eventID, ownerID int, reason string) (bool, error) {
+	const q = `
+		UPDATE events
+		SET status = 'cancelled',
+		    cancelled_at = NOW(),
+		    cancellation_reason = $1
+		WHERE id = $2 AND created_by = $3 AND status <> 'cancelled'
+		RETURNING id
+	`
+	var id int
+	if err := config.DB.Get(&id, q, reason, eventID, ownerID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// (útil para validaciones)
+func GetEventStatus(eventID int) (string, error) {
+	const q = `SELECT status FROM events WHERE id = $1`
+	var st string
+	err := config.DB.Get(&st, q, eventID)
+	return st, err
+}
+
