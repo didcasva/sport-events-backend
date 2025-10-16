@@ -4,6 +4,7 @@ import (
 	"time"
 	"errors"
 	"fmt"
+	"encoding/json" 
 	
 	"sport-events-backend/internal/config"
 	"sport-events-backend/internal/models"
@@ -259,5 +260,12 @@ func GetEventStatus(eventID int) (string, error) {
 	var st string
 	err := config.DB.Get(&st, q, eventID)
 	return st, err
+}
+
+func GetEventRoute(eventID int) (json.RawMessage, error) {
+    var route json.RawMessage
+    const q = `SELECT route FROM events WHERE id = $1`
+    err := config.DB.Get(&route, q, eventID)
+    return route, err
 }
 

@@ -359,5 +359,22 @@ func CancelEventHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func GetEventRouteHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    eventID, err := strconv.Atoi(vars["id"])
+    if err != nil {
+        http.Error(w, "ID de evento inválido", http.StatusBadRequest)
+        return
+    }
+
+    route, err := repository.GetEventRoute(eventID)
+    if err != nil {
+        http.Error(w, "Error obteniendo ruta: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.Write(route) // devolvemos el JSONB crudo
+}
 
 

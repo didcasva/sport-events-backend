@@ -55,6 +55,8 @@ func main() {
 	api.Handle("/events/{id}/registrations", middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.GetEventRegistrationsHandler))).Methods("GET")
 	// Cancelar evento (solo organizer dueño)
 	api.Handle("/events/{id}/cancel",middleware.RoleMiddleware("organizer")(http.HandlerFunc(handlers.CancelEventHandler)),	).Methods("POST")
+	
+	
 
 	// Todos los autenticados pueden ver eventos
 	api.HandleFunc("/events", handlers.GetEventsHandler).Methods("GET")
@@ -66,11 +68,13 @@ func main() {
 	api.Handle("/events/{id}/register",	middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.CancelRegistrationHandler)),).Methods("DELETE")
 	// Ver mis inscripciones (solo runners)
 	api.Handle("/my-registrations",	middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.GetMyRegistrationsHandler)),).Methods("GET")
-
-
+	// Check-in en checkpoint (solo runners inscritos)
+	api.Handle("/events/{id}/checkpoint/{checkpointId}",middleware.RoleMiddleware("runner")(http.HandlerFunc(handlers.CheckinHandler)),).Methods("POST")
 
 	// Cualquier usuario autenticado puede ver su propio perfil
 	api.HandleFunc("/me", handlers.GetMeHandler).Methods("GET")
+	// Obtener eventos creados por los usuarios autentificados
+	api.Handle("/events/{id}/route", (http.HandlerFunc(handlers.GetEventRouteHandler)),).Methods("GET")
 
 
 	// Rutas públicas
@@ -79,11 +83,14 @@ func main() {
 
 
 	// Configurar CORS
-    headersOk := gh.AllowedHeaders([]string{"Content-Type", "Authorization"})
-    originsOk := gh.AllowedOrigins([]string{"http://localhost:3000"}) // frontend
+    headersOk := gh.AllowedHeaders([]string{"Authorization","Content-Type"})
+    originsOk := gh.AllowedOrigins([]string{"*"}) // frontend
     methodsOk := gh.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 
 	log.Printf("Server running on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, gh.CORS(headersOk, originsOk, methodsOk)(router)))
+
+	// Escuchar en todas las interfaces (LAN incluida)
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, gh.CORS(headersOk, originsOk, methodsOk)(router)))
+
 
 }
